@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: workhub
+
+  docker:
+    compose:
+      enabled: false
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/workhub
+    username: workhub
+    password: workhubpassword
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      show-details: always
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+# Konfigurasi JWT WorkHub
+jwt:
+  # Secret key minimal 256-bit (32 karakter atau string base64)
+  secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+  # 15 menit dalam milidetik: 15 * 60 * 1000 = 900000 (FR-AUTH-3)
+  expiration-ms: 900000

@@ -18,6 +18,8 @@ import com.workhub.workspace.service.WorkspaceAccessService;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.workhub.notification.service.NotificationService;
+import com.workhub.event.entity.EventRecord;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -35,6 +37,7 @@ public class TaskService {
     private final WorkspaceMemberRepository memberRepository;
     private final WorkspaceAccessService accessService;
     private final EventStoreService eventStoreService;
+    private final NotificationService notificationService;
 
     public TaskService(
             TaskRepository taskRepository,
@@ -43,7 +46,8 @@ public class TaskService {
             UserRepository userRepository,
             WorkspaceMemberRepository memberRepository,
             WorkspaceAccessService accessService,
-            EventStoreService eventStoreService) {
+            EventStoreService eventStoreService,
+            NotificationService notificationService) {
         this.taskRepository = taskRepository;
         this.projectRepository = projectRepository;
         this.statusRepository = statusRepository;
@@ -51,6 +55,7 @@ public class TaskService {
         this.memberRepository = memberRepository;
         this.accessService = accessService;
         this.eventStoreService = eventStoreService;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -98,7 +103,7 @@ public class TaskService {
         payload.put("projectId", project.getId().toString());
         if (assignee != null) payload.put("assigneeId", assignee.getId().toString());
 
-        eventStoreService.recordEvent(
+        EventRecord event = eventStoreService.recordEvent(
                 workspaceId,
                 currentUserId,
                 "task.created",
@@ -106,6 +111,20 @@ public class TaskService {
                 task.getId(),
                 payload
         );
+
+        // Jika task baru langsung di-assign ke seseorang, kirim notifikasi ke assignee
+        if (assignee != null) {
+            notificationService.createNotification(
+                    assignee.getId(),
+                    workspaceId,
+                    currentUserId,
+                    event.getId(),
+                    "New Task Assigned",
+                    "You were assigned to task: " + task.getTitle(),
+                    "task",
+                    task.getId()
+            );
+        }
 
         return toTaskResponse(task);
     }
@@ -184,7 +203,7 @@ public class TaskService {
         }
 
         // Catat Event
-        eventStoreService.recordEvent(
+        EventRecord event = eventStoreService.recordEvent(
                 workspaceId,
                 currentUserId,
                 eventType,
@@ -192,6 +211,34 @@ public class TaskService {
                 task.getId(),
                 eventPayload
         );
+
+        // 1. Notifikasi jika Assignee baru ditunjuk
+        if ("task.assigned".equals(eventType) && task.getAssignee() != null) {
+            notificationService.createNotification(
+                    task.getAssignee().getId(),
+                    workspaceId,
+                    currentUserId,
+                    event.getId(),
+                    "Task Assigned to You",
+                    "You were assigned to task: " + task.getTitle(),
+                    "task",
+                    task.getId()
+            );
+        }
+
+        // 2. Notifikasi jika Status berubah (kirim ke assignee task bersangkutan)
+        if ("task.status_changed".equals(eventType) && task.getAssignee() != null) {
+            notificationService.createNotification(
+                    task.getAssignee().getId(),
+                    workspaceId,
+                    currentUserId,
+                    event.getId(),
+                    "Task Status Changed",
+                    "Task '" + task.getTitle() + "' moved to " + task.getStatus().getName(),
+                    "task",
+                    task.getId()
+            );
+        }
 
         return toTaskResponse(task);
     }
